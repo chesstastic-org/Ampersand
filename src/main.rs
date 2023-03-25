@@ -22,8 +22,6 @@ fn get_time_ms() -> u128 {
 }
 
 fn main() {
-    generate_random_data();
-    return;
 
     let args: Vec<String> = env::args().collect();
 
@@ -35,8 +33,15 @@ fn main() {
     
         run_ugi(engine)
     } else {
+        let two = args.contains(&"200".to_string());
+        let nnue = load_nnue(if two {
+            "/home/corman/Ampersand/200_model_weights.json"
+        } else {
+            "/home/corman/Ampersand/1000_model_weights.json"
+        });
+
         let engine = Engine {
-            behavior: Box::new(SimpleEngine(None)),
+            behavior: Box::new(SimpleEngine(nnue)),
             game: Chess::create()
         };
     
