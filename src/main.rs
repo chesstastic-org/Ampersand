@@ -12,6 +12,7 @@ mod negamax;
 mod train;
 mod nnue;
 mod engine;
+mod pv_table;
 
 fn get_time_ms() -> u128 {
     let start = SystemTime::now();
@@ -35,9 +36,9 @@ fn main() {
     } else {
         let two = args.contains(&"200".to_string());
         let nnue = load_nnue(if two {
-            "/home/corman/Ampersand/200_model_weights.json"
+            "./200_model_weights.json"
         } else {
-            "/home/corman/Ampersand/1000_model_weights.json"
+            "./200_model_weights.json"
         });
 
         let engine = Engine {

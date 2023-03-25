@@ -95,7 +95,7 @@ fn apply_layer(input: &[i16], output: &mut [i16], layer: &Layer, activation: imp
         .for_each(|(ind, neuron) | { output[ind] = neuron; });
 }
 
-pub fn eval_nnue<'a>(info: &mut SearchInfo) -> Vec<i16> {
+pub fn eval_nnue<'a, const T: usize>(info: &mut SearchInfo<T>) -> Vec<i16> {
     let (input, rest) = info.layers.split_at_mut(1);
     let (hidden, rest) = rest.split_at_mut(1);
     let input = &mut input[0];

@@ -2,13 +2,13 @@ use std::cmp::Reverse;
 
 use monster_chess::board::{game::{NORMAL_MODE, GameResults}, Board, actions::{Move, Action}};
 
-use crate::{nnue::{NNUE, eval_nnue}, train::{get_features, save_features}, get_time_ms};
+use crate::{nnue::{NNUE, eval_nnue}, train::{get_features, save_features}, get_time_ms, pv_table::PV};
 
 pub const MAX_SCORE: i32 = 1_000_000_000;
 pub const MIN_SCORE: i32 = -1_000_000_000;
 
 pub fn evaluate<const T: usize>(
-    search_info: &mut SearchInfo, 
+    search_info: &mut SearchInfo<T>, 
     board: &mut Board<T>
 ) -> i32 {
     for square in 0..search_info.layers[0].len() {
@@ -25,14 +25,15 @@ pub struct TranspositionEntry {
     pub best_move: Move
 }
 
-pub struct SearchInfo<'a> {
+pub struct SearchInfo<'a, const T: usize> {
     pub best_move: Option<Move>,
     pub nnue: &'a NNUE,
     pub layers: Vec<Vec<i16>>,
     pub flips: Vec<usize>,
     pub nodes: u128,
     pub transposition_table: Vec<Option<TranspositionEntry>>,
-    pub transposition_size: usize
+    pub transposition_size: usize,
+    pub pv_table: PV<T>
 }
 
 fn compare_moves(action: &Move, other: &Move) -> bool {
@@ -49,13 +50,13 @@ fn compare_moves(action: &Move, other: &Move) -> bool {
     }
 }
 
-pub fn score_action(search_info: &mut SearchInfo, action: &Move, entry: &Option<TranspositionEntry>) -> i32 {
+pub fn score_action<const T: usize>(search_info: &mut SearchInfo<T>, action: &Move, entry: &Option<TranspositionEntry>) -> i32 {
     if let Some(entry) = entry {
         let best_move = entry.best_move;
 
         let is_tt_move = compare_moves(action, &best_move);
         if is_tt_move {
-            return 0;
+            return 1;
         }
     }
 
@@ -68,11 +69,13 @@ pub struct ScoredMove {
 }
 
 pub fn negamax<const T: usize>(
-    search_info: &mut SearchInfo, 
+    search_info: &mut SearchInfo<T>, 
     board: &mut Board<T>, 
     mut alpha: i32, mut beta: i32,
     depth: u32, ply: u32
 ) -> i32 {
+    search_info.pv_table.init_pv(ply);
+    
     if depth == 0 { return evaluate(search_info, board); }
 
     let hash = (board.game.zobrist.compute(&board) as usize) % search_info.transposition_size;
@@ -81,6 +84,7 @@ pub fn negamax<const T: usize>(
     if let Some(entry) = entry {
         if entry.depth >= depth {
             if ply == 0 {
+                search_info.pv_table.update_pv(ply, Some(entry.best_move));
                 search_info.best_move = Some(entry.best_move);
             }
             return entry.eval;
@@ -112,6 +116,7 @@ pub fn negamax<const T: usize>(
         if score > best_score {
             best_score = score;
             best_move = Some(action);
+            search_info.pv_table.update_pv(ply, best_move);
             if score > alpha {
                 alpha = score;
             }
@@ -138,7 +143,7 @@ pub fn negamax<const T: usize>(
 }
 
 pub fn negamax_iid<const T: usize>(
-    search_info: &mut SearchInfo, 
+    search_info: &mut SearchInfo<T>, 
     board: &mut Board<T>,
     max_nodes: u32
 ) -> i32 {
@@ -155,7 +160,8 @@ pub fn negamax_iid<const T: usize>(
         let npms = nodes / time;
         let nps = npms * 1_000;
 
-        println!("info depth {depth} time {} nodes {} nps {}", time, nodes, nps);
+        let pv = search_info.pv_table.display_pv(board);
+        println!("info depth {depth} time {} nodes {} nps {} pv {}", time, nodes, nps, pv);
 
         if nodes > (max_nodes as u128) {
             break;
