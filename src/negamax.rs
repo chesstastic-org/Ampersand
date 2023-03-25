@@ -31,7 +31,7 @@ pub struct HistoryInfo {
     pub counter_move: Option<Move>
 }
 
-pub const MAX_KILLER_MOVES: usize = 2;
+pub const MAX_KILLER_MOVES: usize = 5;
 pub type KillerMoves = [[Option<Move>; MAX_KILLER_MOVES]; MAX_DEPTH];
 
 pub fn store_killer_move<const T: usize>(search_info: &mut SearchInfo<T>, ply: u32, action: Move) {
@@ -186,7 +186,7 @@ pub fn negamax<const T: usize>(
         if score > beta {
             best_move = Some(action);
 
-            //store_killer_move(search_info, ply, action);
+            store_killer_move(search_info, ply, action);
 
             if let Move::Action(action) = action {
                 if let Some(from) = action.from {
