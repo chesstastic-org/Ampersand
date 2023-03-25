@@ -36,9 +36,9 @@ fn main() {
     } else {
         let two = args.contains(&"200".to_string());
         let nnue = load_nnue(if two {
-            "./200_model_weights.json"
+            "/home/corman/Ampersand/200_model_weights.json"
         } else {
-            "./200_model_weights.json"
+            "/home/corman/Ampersand/1000_model_weights.json"
         });
 
         let engine = Engine {
