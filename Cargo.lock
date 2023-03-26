@@ -133,9 +133,9 @@ dependencies = [
 
 [[package]]
 name = "monster_ugi"
-version = "0.0.5"
+version = "0.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b828ec9498e7eec9933b9cf8e23e906c148aec326698387b224de6b8d43b5200"
+checksum = "93939fcddaa1769c371fd4210b088147928d5e78176cc71004398222eddd952f"
 dependencies = [
  "monster_chess",
  "rand",
@@ -276,9 +276,9 @@ checksum = "a8f112729512f8e442d81f95a8a7ddf2b7c6b8a1a6f509a95864142b30cab2d3"
 
 [[package]]
 name = "syn"
-version = "2.0.8"
+version = "2.0.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bcc02725fd69ab9f26eab07fad303e2497fad6fb9eba4f96c4d1687bdf704ad9"
+checksum = "5aad1363ed6d37b84299588d62d3a7d95b5a5c2d9aad5c85609fda12afaa1f40"
 dependencies = [
  "proc-macro2",
  "quote",

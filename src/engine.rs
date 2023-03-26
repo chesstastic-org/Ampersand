@@ -19,7 +19,7 @@ impl<const T: usize> EngineBehavior<T> for SimpleEngine {
         true
     }
 
-    fn select_move(&mut self, board: &mut Board<T>, time_control: TimeControl) -> MoveSelectionResults {
+    fn select_move(&mut self, board: &mut Board<T>, time_control: TimeControl, hashes: &Vec<u64>) -> MoveSelectionResults {
         let nnue = &self.0;
         let squares = board.game.squares as usize;
 
@@ -38,8 +38,11 @@ impl<const T: usize> EngineBehavior<T> for SimpleEngine {
                 table: [[None; MAX_DEPTH]; MAX_DEPTH],
                 length: [0; MAX_DEPTH],
             },
-            killer_moves: [ [ None; MAX_KILLER_MOVES ]; MAX_DEPTH ]
+            killer_moves: [ [ None; MAX_KILLER_MOVES ]; MAX_DEPTH ],
+            hashes: Vec::with_capacity(64)
         };
+
+        search_info.hashes = hashes.clone();
         
         let eval = negamax_iid(&mut search_info, board, 3000) as u64;
 

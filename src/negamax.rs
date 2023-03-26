@@ -31,7 +31,7 @@ pub struct HistoryInfo {
     pub counter_move: Option<Move>
 }
 
-pub const MAX_KILLER_MOVES: usize = 10;
+pub const MAX_KILLER_MOVES: usize = 5;
 pub type KillerMoves = [[Option<Move>; MAX_KILLER_MOVES]; MAX_DEPTH];
 
 pub fn store_killer_move<const T: usize>(search_info: &mut SearchInfo<T>, ply: u32, action: Move) {
@@ -64,7 +64,8 @@ pub struct SearchInfo<'a, const T: usize> {
     pub transposition_size: usize,
     pub pv_table: PV<T>,
     pub history_info: Vec<Vec<Vec<Option<HistoryInfo>>>>,
-    pub killer_moves: KillerMoves
+    pub killer_moves: KillerMoves,
+    pub hashes: Vec<u64>
 }
 
 fn compare_moves(action: &Move, other: &Move) -> bool {
@@ -138,9 +139,15 @@ pub fn negamax<const T: usize>(
 ) -> i32 {
     search_info.pv_table.init_pv(ply);
 
+    let len = search_info.hashes.len();
+
+    if ply > 0 && len >= 5 && search_info.hashes[len - 1] == search_info.hashes[len - 5] {
+        return MIN_SCORE + (ply as i32);
+    }
+
     if depth == 0 { return evaluate(search_info, board); }
 
-    let hash = (board.game.zobrist.compute(&board) as usize) % search_info.transposition_size;
+    let hash = (search_info.hashes[len - 1] as usize) % search_info.transposition_size;
 
     let tt_entry = search_info.transposition_table[hash].clone();
     if let Some(tt_entry) = tt_entry {
@@ -153,8 +160,24 @@ pub fn negamax<const T: usize>(
         }
     }
 
-    let mut moves = board.generate_legal_moves(NORMAL_MODE)
-        .iter()
+    let moves = board.generate_legal_moves(NORMAL_MODE);
+
+    match board.game.resolution.resolve(board, &moves) {
+        GameResults::Draw => {
+            return MIN_SCORE + (ply as i32);
+        },
+        GameResults::Win(team) => {
+            if board.state.moving_team == team {
+                return MAX_SCORE - (ply as i32);
+            }
+
+            return MIN_SCORE + (ply as i32);
+        },
+        GameResults::Ongoing => {}
+    };
+
+        
+    let mut moves = moves.iter()
         .map(|action| ScoredMove { action: *action, score: score_action(&board, search_info, action, &tt_entry, ply) })
         .collect::<Vec<_>>();
 
@@ -173,7 +196,9 @@ pub fn negamax<const T: usize>(
     for ScoredMove { action, .. } in moves {
         search_info.nodes += 1;
         let undo = board.make_move(&action);
+        search_info.hashes.push(board.game.zobrist.compute(&board));
         let score = -negamax(search_info, board, -beta, -alpha, depth - 1, ply + 1);
+        search_info.hashes.pop();
         board.undo_move(undo);
         if score > best_score {
             best_score = score;
@@ -236,8 +261,7 @@ pub fn negamax_iid<const T: usize>(
     max_nodes: u32
 ) -> i32 {
     let mut out: i32 = MIN_SCORE;
-    for depth in 1..1000 {
-
+    for depth in 1..30 {
         let start = get_time_ms();
         out = negamax(search_info, board, MIN_SCORE, MAX_SCORE, depth, 0);
         let end = get_time_ms();
