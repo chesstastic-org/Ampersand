@@ -1,8 +1,9 @@
 use std::cmp::Reverse;
 
-use monster_chess::board::{game::{NORMAL_MODE, GameResults}, Board, actions::{Move, Action}};
+use monster_chess::board::{game::{NORMAL_MODE, GameResults}, Board, actions::{Move, Action, HistoryMove, HistoryState, HistoryUpdate, IndexedPreviousBoard}};
+use serde_json::value::Index;
 
-use crate::{nnue::{NNUE, eval_nnue}, train::{get_features, save_features}, get_time_ms, pv_table::{PV, MAX_DEPTH}};
+use crate::{nnue::{NNUE, eval_nnue, apply_hidden, update_hidden, relu}, train::{get_features, save_features}, get_time_ms, pv_table::{PV, MAX_DEPTH}};
 
 pub const MAX_SCORE: i32 = 1_000_000_000;
 pub const MIN_SCORE: i32 = -1_000_000_000;
@@ -11,10 +12,6 @@ pub fn evaluate<const T: usize>(
     search_info: &mut SearchInfo<T>, 
     board: &mut Board<T>
 ) -> i32 {
-    for square in 0..search_info.layers[0].len() {
-        search_info.layers[0][square] = 0;
-    }
-    save_features(&mut search_info.layers[0], board, &search_info.flips);
     eval_nnue(search_info)[0] as i32
 }
 
@@ -92,19 +89,21 @@ pub fn score_action<const T: usize>(board: &Board<T>, search_info: &mut SearchIn
         }
     }
 
+    
+    let mut score = 0;
+
     let ply = ply as usize;
     let mut i = 0;
     while i < MAX_KILLER_MOVES {
         let killer = search_info.killer_moves[ply][i];
         if let Some(killer) = killer {
             if compare_moves(action, &killer) {
-                return 100_000 - (i as u32);
+                score += 100_000 - (i as u32);
+                break;
             }
         }
         i += 1;
     }
-
-    let mut score = 0;
 
     let base_move = action;
     if let Move::Action(action) = action {
@@ -131,6 +130,104 @@ pub struct ScoredMove {
     score: u32
 }
 
+fn make_move<const T: usize>(board: &mut Board<T>, search_info: &mut SearchInfo<T>, action: &Move) -> Option<HistoryMove<T>> {
+    let undo = board.make_move(&action);
+    search_info.hashes.push(board.game.zobrist.compute(&board));
+
+    register_hidden_updates(search_info, board, &undo, false);
+
+    undo
+}
+
+fn undo_move<const T: usize>(board: &mut Board<T>, search_info: &mut SearchInfo<T>, undo: Option<HistoryMove<T>>) {
+    search_info.hashes.pop();
+
+    register_hidden_updates(search_info, board, &undo, true);
+
+    board.undo_move(undo);
+}
+
+fn register_hidden_updates<const T: usize>(search_info: &mut SearchInfo<T>, board: &Board<T>, undo: &Option<HistoryMove<T>>, reverse: bool) {
+    if let Some(undo) = undo {
+        match &undo.state {
+            HistoryState::Single { all_pieces, first_move, team, piece } => {
+                let old_board = team.1 & piece.1;
+                let current_board = board.state.teams[team.0] & board.state.pieces[piece.0];
+
+                let changed_features = old_board ^ current_board;
+
+                let removed_features = old_board & changed_features;
+                let added_features = current_board & changed_features;
+
+                let removed_features = removed_features.iter_set_bits(board.game.squares)
+                    .map(|square| square + board.game.squares * (team.0 as u16) + (board.game.squares * board.game.teams) * (piece.0 as u16))
+                    .collect::<Vec<_>>();
+                let added_features = added_features.iter_set_bits(board.game.squares)
+                    .map(|square| square + board.game.squares * (team.0 as u16) + (board.game.squares * board.game.teams) * (piece.0 as u16))
+                    .collect::<Vec<_>>();
+
+                if reverse {
+                    update_hidden(search_info, &removed_features, &added_features, relu);
+                } else {
+                    update_hidden(search_info, &added_features, &removed_features, relu);
+                }
+            },
+            HistoryState::Any { all_pieces, first_move, updates } => {
+                let mut piece_updates: Vec<&IndexedPreviousBoard<T>> = vec![];
+                let mut team_updates: Vec<&IndexedPreviousBoard<T>> = vec![];
+
+                let mut added_features: Vec<u16> = Vec::with_capacity(3);
+                let mut removed_features: Vec<u16> = Vec::with_capacity(3);
+
+                for update in updates {
+                    match update {
+                        HistoryUpdate::Piece(piece) => {
+                            piece_updates.push(piece);
+                        }
+                        HistoryUpdate::Team(team) => {
+                            team_updates.push(team);
+                        }
+                    }
+                }
+
+                for piece in piece_updates {
+                    for team in &team_updates {
+                        let old_board = team.1 & piece.1;
+                        let current_board = board.state.teams[team.0] & board.state.pieces[piece.0];
+        
+                        let changed_features = old_board ^ current_board;
+        
+                        let sub_removed_features = old_board & changed_features;
+                        let sub_added_features = current_board & changed_features;
+        
+                        sub_removed_features.iter_set_bits(board.game.squares)
+                            .map(|square| square + board.game.squares * (team.0 as u16) + (board.game.squares * board.game.teams) * (piece.0 as u16))
+                            .for_each(|square| removed_features.push(square));
+                        sub_added_features.iter_set_bits(board.game.squares)
+                            .map(|square| square + board.game.squares * (team.0 as u16) + (board.game.squares * board.game.teams) * (piece.0 as u16))
+                            .for_each(|square| added_features.push(square));
+                    }
+                }
+
+                if reverse {
+                    update_hidden(search_info, &removed_features, &added_features, relu);
+                } else {
+                    update_hidden(search_info, &added_features, &removed_features, relu);
+                }
+            },
+            _ => {
+                for square in 0..search_info.layers[0].len() {
+                    search_info.layers[0][square] = 0;
+                }
+                save_features(&mut search_info.layers[0], board, &search_info.flips);
+                if !reverse {
+                    apply_hidden(search_info);
+                }
+            }
+        }
+    }
+}
+
 pub fn negamax<const T: usize>(
     search_info: &mut SearchInfo<T>, 
     board: &mut Board<T>, 
@@ -142,7 +239,7 @@ pub fn negamax<const T: usize>(
     let len = search_info.hashes.len();
 
     if ply > 0 && len >= 5 && search_info.hashes[len - 1] == search_info.hashes[len - 5] {
-        return MIN_SCORE + (ply as i32);
+        return 0;
     }
 
     if depth == 0 { return evaluate(search_info, board); }
@@ -164,7 +261,7 @@ pub fn negamax<const T: usize>(
 
     match board.game.resolution.resolve(board, &moves) {
         GameResults::Draw => {
-            return MIN_SCORE + (ply as i32);
+            return 0;
         },
         GameResults::Win(team) => {
             if board.state.moving_team == team {
@@ -195,11 +292,11 @@ pub fn negamax<const T: usize>(
 
     for ScoredMove { action, .. } in moves {
         search_info.nodes += 1;
-        let undo = board.make_move(&action);
-        search_info.hashes.push(board.game.zobrist.compute(&board));
+
+        let undo = make_move(board, search_info, &action);
         let score = -negamax(search_info, board, -beta, -alpha, depth - 1, ply + 1);
-        search_info.hashes.pop();
-        board.undo_move(undo);
+        undo_move(board, search_info, undo);
+        
         if score > best_score {
             best_score = score;
             best_move = Some(action);
@@ -273,7 +370,7 @@ pub fn negamax_iid<const T: usize>(
         let nps = npms * 1_000;
 
         let pv = search_info.pv_table.display_pv(board);
-        println!("info cp {} depth {depth} time {} nodes {} nps {}", out / (64 * 64), time, nodes, nps);
+        println!("info cp {} depth {depth} time {} nodes {} nps {} pv {}", out / (64 * 64), time, nodes, nps, pv);
 
         if nodes > (max_nodes as u128) {
             break;

@@ -72,6 +72,10 @@ pub fn relu(val: i16) -> i16 {
     }
 }
 
+pub fn identity(val: i16) -> i16 {
+    val
+}
+
 pub struct Neuron {
     pub weights: Vec<i16>,
     pub bias: i16
@@ -87,6 +91,15 @@ fn process_neuron(input: &[i16], neuron: &Neuron) -> i16 {
     sum + neuron.bias
 }
 
+pub fn update_neuron(sum: &mut i16, added_features: &[u16], removed_features: &[u16], neuron: &Neuron) {
+    for ind in added_features {
+        *sum += neuron.weights[*ind as usize];
+    }
+    for ind in removed_features {
+        *sum -= neuron.weights[*ind as usize];
+    }
+}
+
 fn apply_layer(input: &[i16], output: &mut [i16], layer: &Layer, activation: impl Fn(i16) -> i16) {
     layer.0.iter()
         .map(|neuron| process_neuron(&input, &neuron))
@@ -95,14 +108,32 @@ fn apply_layer(input: &[i16], output: &mut [i16], layer: &Layer, activation: imp
         .for_each(|(ind, neuron) | { output[ind] = neuron; });
 }
 
-pub fn eval_nnue<'a, const T: usize>(info: &mut SearchInfo<T>) -> Vec<i16> {
+pub fn update_layer(input: &mut [i16], added_features: &[u16], removed_features: &[u16], layer: &Layer, activation: impl Fn(i16) -> i16) {
+    for (ind, neuron) in layer.0.iter().enumerate() {
+        update_neuron(&mut input[ind], added_features, removed_features, neuron);
+        input[ind] = activation(input[ind]);
+    }
+}
+
+pub fn apply_hidden<'a, const T: usize>(info: &mut SearchInfo<T>) {
     let (input, rest) = info.layers.split_at_mut(1);
-    let (hidden, rest) = rest.split_at_mut(1);
+    let (hidden, _) = rest.split_at_mut(1);
     let input = &mut input[0];
     let hidden = &mut hidden[0];
-    let output = &mut rest[0];
     apply_layer(input, hidden, &info.nnue.hidden, relu);
-    apply_layer(hidden, output, &info.nnue.output, |el| el);
+}
+
+pub fn update_hidden<'a, const T: usize>(info: &mut SearchInfo<T>, added_features: &[u16], removed_features: &[u16], activation: impl Fn(i16) -> i16) {
+    let hidden = &mut info.layers[1];
+    update_layer(hidden, added_features, removed_features, &info.nnue.hidden, activation);
+}
+
+pub fn eval_nnue<'a, const T: usize>(info: &mut SearchInfo<T>) -> Vec<i16> {
+    let (_, rest) = info.layers.split_at_mut(1);
+    let (hidden, rest) = rest.split_at_mut(1);
+    let hidden = &mut hidden[0];
+    let output = &mut rest[0];
+    apply_layer(hidden, output, &info.nnue.output, identity);
     output.clone()
 }
 

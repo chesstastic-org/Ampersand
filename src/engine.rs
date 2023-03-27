@@ -3,7 +3,7 @@ use std::{thread::{Thread, self}, time::Duration};
 use monster_chess::board::{Board, actions::Move, game::NORMAL_MODE};
 use monster_ugi::engine::{EngineBehavior, EngineInfo, TimeControl, MoveSelectionResults, Info};
 
-use crate::{negamax::{SearchInfo, negamax, MIN_SCORE, MAX_SCORE, negamax_iid, MAX_KILLER_MOVES}, nnue::{NNUE, eval_nnue, load_nnue, alloc_layers}, train::{get_features, save_features, create_flips}, get_time_ms, pv_table::{PV, MAX_DEPTH}};
+use crate::{negamax::{SearchInfo, negamax, MIN_SCORE, MAX_SCORE, negamax_iid, MAX_KILLER_MOVES}, nnue::{NNUE, eval_nnue, load_nnue, alloc_layers, apply_hidden}, train::{get_features, save_features, create_flips}, get_time_ms, pv_table::{PV, MAX_DEPTH}};
 
 pub struct SimpleEngine(pub NNUE);
 
@@ -44,7 +44,12 @@ impl<const T: usize> EngineBehavior<T> for SimpleEngine {
 
         search_info.hashes = hashes.clone();
         
-        let eval = negamax_iid(&mut search_info, board, 3000) as u64;
+        for square in 0..search_info.layers[0].len() {
+            search_info.layers[0][square] = 0;
+        }
+        save_features(&mut search_info.layers[0], board, &search_info.flips);
+        apply_hidden(&mut search_info);
+        let eval = negamax_iid(&mut search_info, board, 1111113000) as u64;
 
         MoveSelectionResults {
             best_move: search_info.best_move.expect("Could not find best move."),
