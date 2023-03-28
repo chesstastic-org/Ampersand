@@ -5,7 +5,7 @@ use serde_json::value::Index;
 
 use super::{
     nnue::{NNUE, eval_nnue, apply_hidden, update_hidden, relu, register_hidden_updates}, pv::{PV, MAX_DEPTH}, util::{MIN_SCORE, MAX_SCORE, compare_moves}, ordering::{KillerMoves, store_killer_move, MAX_KILLER_MOVES, TranspositionEntry, HistoryInfo, score_action},
-    super::{get_time_ms}, features::save_features, search_info::SearchInfo
+    super::{get_time_ms}, features::save_features, search_info::{SearchInfo, SearchEnd}
 };
 
 pub fn evaluate<const T: usize>(
@@ -43,12 +43,27 @@ pub fn negamax<const T: usize>(
     mut alpha: i32, mut beta: i32,
     depth: u32, ply: u32
 ) -> i32 {
-    if depth == 0 { return evaluate(search_info, board); }
-    
     search_info.pv_table.init_pv(ply);
+    if depth == 0 { return evaluate(search_info, board); }
 
+    if search_info.ended_early {
+        return 0;
+    }
+
+    if depth > 1 {
+        let end_early = match search_info.search_end {
+            SearchEnd::Nodes(nodes) => search_info.nodes >= nodes,
+            SearchEnd::Time(time) => get_time_ms() >= time,
+            SearchEnd::None => false
+        };
+
+        if end_early {
+            search_info.ended_early = true;
+            return 0;
+        }
+    }
+    
     let len = search_info.hashes.len();
-
 
     if ply > 0 && len >= 5 && search_info.hashes[len - 1] == search_info.hashes[len - 5] {
         return 0;
@@ -100,11 +115,25 @@ pub fn negamax<const T: usize>(
         best_move = Some(moves[0].action);
     }
 
+    let mut searched_moves = 0;
     for ScoredMove { action, .. } in moves {
         search_info.nodes += 1;
+        searched_moves += 1;
 
         let undo = make_move(board, search_info, &action);
-        let score = -negamax(search_info, board, -beta, -alpha, depth - 1, ply + 1);
+
+        let score = if searched_moves < 200 {
+            -negamax(search_info, board, -beta, -alpha, depth - 1, ply + 1)
+        } else {
+            let score = -negamax(search_info, board, -alpha - 1, -alpha, depth - 1, ply + 1);
+            
+            if score > alpha && score < beta {
+                -negamax(search_info, board, -beta, -alpha, depth - 1, ply + 1)
+            } else {
+                score
+            }
+        };
+
         undo_move(board, search_info, undo);
         
         if score > best_score {
@@ -164,14 +193,17 @@ pub fn negamax<const T: usize>(
 
 pub fn negamax_iid<const T: usize>(
     search_info: &mut SearchInfo<T>, 
-    board: &mut Board<T>,
-    max_nodes: u32
+    board: &mut Board<T>
 ) -> i32 {
     let mut out: i32 = MIN_SCORE;
-    for depth in 1..30 {
+    for depth in 1..MAX_DEPTH {
         let start = get_time_ms();
-        out = negamax(search_info, board, MIN_SCORE, MAX_SCORE, depth, 0);
+        out = negamax(search_info, board, MIN_SCORE, MAX_SCORE, depth as u32, 0);
         let end = get_time_ms();
+
+        if search_info.ended_early {
+            return out;   
+        }
 
         let mut time = end - start;
         if time == 0 { time = 1; }
@@ -180,11 +212,7 @@ pub fn negamax_iid<const T: usize>(
         let nps = npms * 1_000;
 
         let pv = search_info.pv_table.display_pv(board);
-        println!("info depth {depth} cp {} time {} nodes {} nps {} pv {}", out, time, nodes, nps, pv);
-
-        if nodes > (max_nodes as u128) {
-            break;
-        }
+        println!("info depth {depth} cp {} time {} nodes {} nps {}", out, time, nodes, nps);
     }
 
     return out;

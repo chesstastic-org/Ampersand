@@ -4,6 +4,8 @@ use crate::engine::{util::compare_moves, search_info::SearchInfo};
 
 use super::{MAX_KILLER_MOVES, TranspositionEntry};
 
+const KILLER_DECAY: [ u32; 5 ] = [ 0, 1, 2, 3, 4 ];
+
 pub fn score_action<const T: usize>(board: &Board<T>, search_info: &mut SearchInfo<T>, action: &Move, tt_entry: &Option<TranspositionEntry>, ply: u32) -> u32 {
     if let Some(entry) = tt_entry {
         let best_move = entry.best_move;
@@ -23,8 +25,10 @@ pub fn score_action<const T: usize>(board: &Board<T>, search_info: &mut SearchIn
         let killer = search_info.killer_moves[ply][i];
         if let Some(killer) = killer {
             if compare_moves(action, &killer) {
-                score += 100_000 - (i as u32);
-                break;
+                // Killer Moves that happen later should be much less resistant to history/countermove changes.
+                let killer_loss = KILLER_DECAY[i];
+
+                score += 100_000 - killer_loss;
             }
         }
         i += 1;

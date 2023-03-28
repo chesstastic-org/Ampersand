@@ -2,6 +2,13 @@ use monster_chess::board::{actions::Move, Board};
 
 use super::{nnue::{NNUE, alloc_layers}, ordering::{KillerMoves, HistoryInfo, MAX_KILLER_MOVES, TranspositionEntry}, pv::{PV, MAX_DEPTH}, features::create_flips};
 
+#[derive(Debug, Clone, Copy)]
+pub enum SearchEnd {
+    Time(u128),
+    Nodes(u128),
+    None
+}
+
 pub struct SearchInfo<'a, const T: usize> {
     pub best_move: Option<Move>,
     pub nnue: &'a NNUE,
@@ -13,10 +20,12 @@ pub struct SearchInfo<'a, const T: usize> {
     pub pv_table: PV<T>,
     pub history_info: Vec<Vec<Vec<Option<HistoryInfo>>>>,
     pub killer_moves: KillerMoves,
-    pub hashes: Vec<u64>
+    pub hashes: Vec<u64>,
+    pub ended_early: bool,
+    pub search_end: SearchEnd
 }
 
-pub fn create_search_info<'a, const T: usize>(board: &Board<T>, nnue: &'a NNUE) -> SearchInfo<'a, T> {
+pub fn create_search_info<'a, const T: usize>(board: &Board<T>, nnue: &'a NNUE, search_end: SearchEnd) -> SearchInfo<'a, T> {
     let squares = board.game.squares as usize;
 
     SearchInfo {
@@ -35,6 +44,8 @@ pub fn create_search_info<'a, const T: usize>(board: &Board<T>, nnue: &'a NNUE) 
             length: [0; MAX_DEPTH],
         },
         killer_moves: [ [ None; MAX_KILLER_MOVES ]; MAX_DEPTH ],
-        hashes: Vec::with_capacity(64)
+        hashes: Vec::with_capacity(64),
+        ended_early: false,
+        search_end
     }
 }

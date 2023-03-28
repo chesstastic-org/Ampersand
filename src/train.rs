@@ -9,7 +9,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use std::fs;
 use std::io::Write;
 
-use crate::{engine::{pv::{MAX_DEPTH, PV}, search_info::{SearchInfo, create_search_info}, negamax::{negamax_iid}, nnue::{NNUE, alloc_layers, apply_hidden}, ordering::MAX_KILLER_MOVES, features::{get_features, save_features, create_flips}}};
+use crate::{engine::{pv::{MAX_DEPTH, PV}, search_info::{SearchInfo, create_search_info, SearchEnd}, negamax::{negamax_iid}, nnue::{NNUE, alloc_layers, apply_hidden}, ordering::MAX_KILLER_MOVES, features::{get_features, save_features, create_flips}}};
 
 fn get_time_ms() -> u128 {
     let start = SystemTime::now();
@@ -48,7 +48,7 @@ fn generate_random_game(rng: &mut ThreadRng, nnue: &NNUE) -> Vec<(Vec<i16>, i32)
             break;
         }
 
-        let mut search_info = create_search_info(&board, nnue);
+        let mut search_info = create_search_info(&board, nnue, SearchEnd::Nodes(3000));
 
         search_info.hashes = hashes.clone();
         
@@ -57,7 +57,7 @@ fn generate_random_game(rng: &mut ThreadRng, nnue: &NNUE) -> Vec<(Vec<i16>, i32)
         }
         save_features(&mut search_info.layers[0], &mut board, &search_info.flips);
         apply_hidden(&mut search_info);
-        let eval = negamax_iid(&mut search_info, &mut board, 150) as u64;
+        let eval = negamax_iid(&mut search_info, &mut board) as u64;
 
         let action = search_info.best_move.expect("Could not find NNUE move");
 
