@@ -1,6 +1,6 @@
 use std::cmp::Reverse;
 
-use monster_chess::board::{game::{NORMAL_MODE, GameResults}, Board, actions::{Move, Action, HistoryMove, HistoryState, HistoryUpdate, IndexedPreviousBoard}};
+use monster_chess::{board::{game::{NORMAL_MODE, GameResults}, Board, actions::{Move, Action, HistoryMove, HistoryState, HistoryUpdate, IndexedPreviousBoard}}, games::chess::ATTACKS_MODE};
 use serde_json::value::Index;
 
 use crate::{nnue::{NNUE, eval_nnue, apply_hidden, update_hidden, relu}, train::{get_features, save_features}, get_time_ms, pv_table::{PV, MAX_DEPTH}};
@@ -12,7 +12,7 @@ pub fn evaluate<const T: usize>(
     search_info: &mut SearchInfo<T>, 
     board: &mut Board<T>
 ) -> i32 {
-    eval_nnue(search_info)[0] as i32
+    (eval_nnue(search_info)[0] as i32) / (64 * 64)
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -234,27 +234,15 @@ pub fn negamax<const T: usize>(
     mut alpha: i32, mut beta: i32,
     depth: u32, ply: u32
 ) -> i32 {
+    if depth == 0 { return evaluate(search_info, board); }
+    
     search_info.pv_table.init_pv(ply);
 
     let len = search_info.hashes.len();
 
+
     if ply > 0 && len >= 5 && search_info.hashes[len - 1] == search_info.hashes[len - 5] {
         return 0;
-    }
-
-    if depth == 0 { return evaluate(search_info, board); }
-
-    let hash = (search_info.hashes[len - 1] as usize) % search_info.transposition_size;
-
-    let tt_entry = search_info.transposition_table[hash].clone();
-    if let Some(tt_entry) = tt_entry {
-        if tt_entry.depth >= depth {
-            if ply == 0 {
-                search_info.pv_table.update_pv(ply, Some(tt_entry.best_move));
-                search_info.best_move = Some(tt_entry.best_move);
-            }
-            return tt_entry.eval;
-        }
     }
 
     let moves = board.generate_legal_moves(NORMAL_MODE);
@@ -272,6 +260,19 @@ pub fn negamax<const T: usize>(
         },
         GameResults::Ongoing => {}
     };
+
+    let hash = (search_info.hashes[len - 1] as usize) % search_info.transposition_size;
+
+    let tt_entry = search_info.transposition_table[hash].clone();
+    if let Some(tt_entry) = tt_entry {
+        if tt_entry.depth >= depth {
+            if ply == 0 {
+                search_info.pv_table.update_pv(ply, Some(tt_entry.best_move));
+                search_info.best_move = Some(tt_entry.best_move);
+            }
+            return tt_entry.eval;
+        }
+    }
 
         
     let mut moves = moves.iter()
@@ -305,7 +306,7 @@ pub fn negamax<const T: usize>(
                 alpha = score;
             }
         }
-        if score > beta {
+        if score >= beta {
             best_move = Some(action);
 
             store_killer_move(search_info, ply, action);
@@ -370,7 +371,7 @@ pub fn negamax_iid<const T: usize>(
         let nps = npms * 1_000;
 
         let pv = search_info.pv_table.display_pv(board);
-        println!("info cp {} depth {depth} time {} nodes {} nps {} pv {}", out / (64 * 64), time, nodes, nps, pv);
+        println!("info depth {depth} cp {} time {} nodes {} nps {} pv {}", out, time, nodes, nps, pv);
 
         if nodes > (max_nodes as u128) {
             break;

@@ -23,7 +23,6 @@ fn get_time_ms() -> u128 {
 }
 
 fn main() {
-
     let args: Vec<String> = env::args().collect();
 
     if args.len() > 1 && args.contains(&"random".to_string()) {

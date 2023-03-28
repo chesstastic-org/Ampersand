@@ -9,6 +9,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use std::fs;
 use std::io::Write;
 
+use crate::{pv_table::{MAX_DEPTH, PV}, negamax::{MAX_KILLER_MOVES, SearchInfo, negamax_iid}, nnue::{NNUE, alloc_layers, apply_hidden}};
+
 fn get_time_ms() -> u128 {
     let start = SystemTime::now();
     start
@@ -69,7 +71,7 @@ pub fn get_features<const T: usize>(board: &Board<T>, flips: &Vec<usize>) -> Vec
     features
 }
 
-fn generate_random_game(rng: &mut ThreadRng) -> Vec<(Vec<i16>, i32)> {
+fn generate_random_game(rng: &mut ThreadRng, nnue: &NNUE) -> Vec<(Vec<i16>, i32)> {
     let game = Chess::create();
     let mut board = game.default();
     let mut move_count = 0;
@@ -80,7 +82,11 @@ fn generate_random_game(rng: &mut ThreadRng) -> Vec<(Vec<i16>, i32)> {
 
     let flips = &create_flips(&board);
 
+    let mut hashes: Vec<u64> = vec![];
+
     loop {
+        hashes.push(game.zobrist.compute(&board));
+
         let moves = board.generate_legal_moves(NORMAL_MODE);
         match game.resolution.resolve(&mut board, &moves) {
             GameResults::Win(team) => {
@@ -94,7 +100,39 @@ fn generate_random_game(rng: &mut ThreadRng) -> Vec<(Vec<i16>, i32)> {
             break;
         }
 
-        let action = moves.choose(rng).copied().expect("Could not get random move.");
+
+        let squares = board.game.squares as usize;
+        let mut search_info = SearchInfo {
+            best_move: None,
+            nnue,
+            nodes: 0,
+            flips: create_flips(&board),
+            layers: alloc_layers(nnue),
+            transposition_table: vec![ None; 1_000_000 ],
+            transposition_size: 1_000_000,
+            history_info: vec![ 
+                vec![ vec![ None; squares ]; squares ]; 2  
+            ],
+            pv_table: PV {
+                table: [[None; MAX_DEPTH]; MAX_DEPTH],
+                length: [0; MAX_DEPTH],
+            },
+            killer_moves: [ [ None; MAX_KILLER_MOVES ]; MAX_DEPTH ],
+            hashes: Vec::with_capacity(64)
+        };
+
+        search_info.hashes = hashes.clone();
+        
+        for square in 0..search_info.layers[0].len() {
+            search_info.layers[0][square] = 0;
+        }
+        save_features(&mut search_info.layers[0], &mut board, &search_info.flips);
+        apply_hidden(&mut search_info);
+        let eval = negamax_iid(&mut search_info, &mut board, 150) as u64;
+
+        let action = search_info.best_move.expect("Could not find NNUE move");
+
+        //let action = moves.choose(rng).copied().expect("Could not get random move.");
 
         uci_positions.push((get_features(&board, flips), board.state.moving_team));
         board.make_move(&action);
@@ -110,7 +148,7 @@ fn generate_random_game(rng: &mut ThreadRng) -> Vec<(Vec<i16>, i32)> {
         .collect::<Vec<_>>()
 }
 
-pub fn generate_random_data(){ 
+pub fn generate_random_data(nnue: &NNUE) { 
     let mut rng = thread_rng();
 
     let mut file = fs::OpenOptions::new()
@@ -122,11 +160,11 @@ pub fn generate_random_data(){
 
     let mut position_count = 0;
     let mut iter = 0;
-    while position_count < 2_000_000 {
+    while position_count < 1_000_000 {
         let start = get_time_ms();
         let mut positions: Vec<(Vec<i16>, i32)> = vec![];
-        for _ in 0..1000 {       
-            let game = generate_random_game(&mut rng); 
+        for _ in 0..100 {       
+            let game = generate_random_game(&mut rng, nnue); 
             positions.extend(game);
         }
 
@@ -140,15 +178,15 @@ pub fn generate_random_data(){
             draws -= 1;
         }
 
-        while (2 * wins) > draws  {
+        /*while (2 * wins) > draws  {
             let win_index = positions.iter().position(|(_, result)| result != &0).expect("Could not find a win.");
             positions.swap_remove(win_index);
 
             wins -= 1;
-        }
+        }*/
 
         for (features, score) in positions {
-            let features = features.iter().map(|el| el.to_string()).collect::<Vec<_>>().join(".");
+            let features = features.iter().map(|el| el.to_string()).collect::<Vec<_>>().join("");
             writeln!(file, "{features}: {:.1}", score).unwrap();
             position_count += 1;
         }

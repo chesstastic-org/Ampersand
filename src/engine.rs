@@ -49,7 +49,7 @@ impl<const T: usize> EngineBehavior<T> for SimpleEngine {
         }
         save_features(&mut search_info.layers[0], board, &search_info.flips);
         apply_hidden(&mut search_info);
-        let eval = negamax_iid(&mut search_info, board, 1111113000) as u64;
+        let eval = negamax_iid(&mut search_info, board, 3000) as u64;
 
         MoveSelectionResults {
             best_move: search_info.best_move.expect("Could not find best move."),
