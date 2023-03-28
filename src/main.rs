@@ -1,18 +1,15 @@
 use std::{env, time::{SystemTime, UNIX_EPOCH}};
 
+use engine::nnue::load_nnue;
 use monster_chess::games::chess::Chess;
 use monster_ugi::{ugi::run_ugi, engine::Engine, random::RandomEngine};
-use nnue::{load_nnue};
 use rand::thread_rng;
-use train::get_features;
 
-use crate::{negamax::evaluate, nnue::eval_nnue, train::generate_random_data, engine::SimpleEngine};
+use crate::{train::generate_random_data, ugi::SimpleEngine};
 
-mod negamax;
 mod train;
-mod nnue;
+mod ugi;
 mod engine;
-mod pv_table;
 
 fn get_time_ms() -> u128 {
     let start = SystemTime::now();

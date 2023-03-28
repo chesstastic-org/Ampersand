@@ -4,7 +4,7 @@ use serde;
 use serde::Deserialize;
 use serde_json;
 
-use crate::negamax::SearchInfo;
+use crate::engine::search_info::SearchInfo;
 
 
 #[derive(Deserialize)]

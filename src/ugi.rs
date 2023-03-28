@@ -3,7 +3,10 @@ use std::{thread::{Thread, self}, time::Duration};
 use monster_chess::board::{Board, actions::Move, game::NORMAL_MODE};
 use monster_ugi::engine::{EngineBehavior, EngineInfo, TimeControl, MoveSelectionResults, Info};
 
-use crate::{negamax::{SearchInfo, negamax, MIN_SCORE, MAX_SCORE, negamax_iid, MAX_KILLER_MOVES}, nnue::{NNUE, eval_nnue, load_nnue, alloc_layers, apply_hidden}, train::{get_features, save_features, create_flips}, get_time_ms, pv_table::{PV, MAX_DEPTH}};
+use crate::{
+    engine::{negamax::{negamax_iid}, nnue::{NNUE, eval_nnue, load_nnue, alloc_layers, apply_hidden}, pv::{PV, MAX_DEPTH}, features::save_features, search_info::create_search_info},
+    get_time_ms
+};
 
 pub struct SimpleEngine(pub NNUE);
 
@@ -21,26 +24,7 @@ impl<const T: usize> EngineBehavior<T> for SimpleEngine {
 
     fn select_move(&mut self, board: &mut Board<T>, time_control: TimeControl, hashes: &Vec<u64>) -> MoveSelectionResults {
         let nnue = &self.0;
-        let squares = board.game.squares as usize;
-
-        let mut search_info = SearchInfo {
-            best_move: None,
-            nnue,
-            nodes: 0,
-            flips: create_flips(board),
-            layers: alloc_layers(nnue),
-            transposition_table: vec![ None; 1_000_000 ],
-            transposition_size: 1_000_000,
-            history_info: vec![ 
-                vec![ vec![ None; squares ]; squares ]; 2  
-            ],
-            pv_table: PV {
-                table: [[None; MAX_DEPTH]; MAX_DEPTH],
-                length: [0; MAX_DEPTH],
-            },
-            killer_moves: [ [ None; MAX_KILLER_MOVES ]; MAX_DEPTH ],
-            hashes: Vec::with_capacity(64)
-        };
+        let mut search_info = create_search_info(board, nnue);
 
         search_info.hashes = hashes.clone();
         
