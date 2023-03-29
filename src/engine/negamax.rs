@@ -20,13 +20,18 @@ pub struct ScoredMove {
     score: u32
 }
 
-fn make_move<const T: usize>(board: &mut Board<T>, search_info: &mut SearchInfo<T>, action: &Move) -> Option<HistoryMove<T>> {
+pub struct TacticalMadeMove<const T: usize>(Option<HistoryMove<T>>, bool);
+
+fn make_move<const T: usize>(board: &mut Board<T>, search_info: &mut SearchInfo<T>, action: &Move) -> TacticalMadeMove<T> {
+    let previous_piece_count = board.state.all_pieces.count_ones();
+
     let undo = board.make_move(&action);
     search_info.hashes.push(board.game.zobrist.compute(&board));
 
     register_hidden_updates(search_info, board, &undo, false);
 
-    undo
+    let piece_count = board.state.all_pieces.count_ones();
+    TacticalMadeMove(undo, piece_count < previous_piece_count)
 }
 
 fn undo_move<const T: usize>(board: &mut Board<T>, search_info: &mut SearchInfo<T>, undo: Option<HistoryMove<T>>) {
@@ -97,7 +102,6 @@ pub fn negamax<const T: usize>(
             return tt_entry.eval;
         }
     }
-
         
     let mut moves = moves.iter()
         .map(|action| ScoredMove { action: *action, score: score_action(&board, search_info, action, &tt_entry, ply) })
@@ -120,9 +124,9 @@ pub fn negamax<const T: usize>(
         search_info.nodes += 1;
         searched_moves += 1;
 
-        let undo = make_move(board, search_info, &action);
+        let TacticalMadeMove(undo, _) = make_move(board, search_info, &action);
 
-        let score = if searched_moves < 200 {
+        let score = if searched_moves == 1 {
             -negamax(search_info, board, -beta, -alpha, depth - 1, ply + 1)
         } else {
             let score = -negamax(search_info, board, -alpha - 1, -alpha, depth - 1, ply + 1);
@@ -188,7 +192,7 @@ pub fn negamax<const T: usize>(
         });
     }
 
-    return alpha;
+    return best_score;
 }
 
 pub fn negamax_iid<const T: usize>(
@@ -212,7 +216,7 @@ pub fn negamax_iid<const T: usize>(
         let nps = npms * 1_000;
 
         let pv = search_info.pv_table.display_pv(board);
-        println!("info depth {depth} cp {} time {} nodes {} nps {}", out, time, nodes, nps);
+        //println!("info depth {depth} cp {} time {} nodes {} nps {} bf {:.2}", out, time, nodes, nps, (nodes as f64).powf(1.0 / (depth as f64)));
     }
 
     return out;

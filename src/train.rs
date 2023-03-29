@@ -5,7 +5,7 @@ use monster_chess::{
 use rand::{rngs::ThreadRng, thread_rng};
 use rand::prelude::SliceRandom;
 
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::{time::{SystemTime, UNIX_EPOCH}, fs::File};
 use std::fs;
 use std::io::Write;
 
@@ -48,7 +48,7 @@ fn generate_random_game(rng: &mut ThreadRng, nnue: &NNUE) -> Vec<(Vec<i16>, i32)
             break;
         }
 
-        let mut search_info = create_search_info(&board, nnue, SearchEnd::Nodes(3000));
+        let mut search_info = create_search_info(&board, nnue, SearchEnd::Nodes(10_000));
 
         search_info.hashes = hashes.clone();
         
@@ -77,22 +77,13 @@ fn generate_random_game(rng: &mut ThreadRng, nnue: &NNUE) -> Vec<(Vec<i16>, i32)
         .collect::<Vec<_>>()
 }
 
-pub fn generate_random_data(nnue: &NNUE) { 
+pub fn cycle_datagen(nnue: &NNUE, file: &mut File, iter: &mut i32, position_count: &mut i32) { 
     let mut rng = thread_rng();
 
-    let mut file = fs::OpenOptions::new()
-        .write(true)
-        .append(true)
-        .open("positions.txt")
-        .unwrap();
-    
-
-    let mut position_count = 0;
-    let mut iter = 0;
-    while position_count < 1_000_000 {
+    while *position_count < 1_000_000 {
         let start = get_time_ms();
         let mut positions: Vec<(Vec<i16>, i32)> = vec![];
-        for _ in 0..100 {       
+        for _ in 0..100 {
             let game = generate_random_game(&mut rng, nnue); 
             positions.extend(game);
         }
@@ -113,14 +104,30 @@ pub fn generate_random_data(nnue: &NNUE) {
 
             wins -= 1;
         }*/
-
+    
+        let mut text = String::new();
         for (features, score) in positions {
             let features = features.iter().map(|el| el.to_string()).collect::<Vec<_>>().join("");
-            writeln!(file, "{features}: {:.1}", score).unwrap();
-            position_count += 1;
+            text.push_str(&format!("{features}: {:.1}", score));
+            *position_count += 1;
         }
+        writeln!(file, "{}", text).unwrap();
         let end = get_time_ms();
         println!("{iter}: {} ({} positions)", end - start, position_count);
-        iter += 1;
+        *iter += 1;
     }
+}
+
+pub fn generate_random_data(nnue: &NNUE) { 
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .append(true)
+        .open("positions.txt")
+        .unwrap();
+    
+
+    let mut position_count = 0;
+    let mut iter = 0;
+    
+    cycle_datagen(nnue, &mut file, &mut iter, &mut position_count);
 }
