@@ -1,5 +1,5 @@
 /target
-*model_weights.json
+*model_weights*.json
 sprt.bash
 8mvs_+90_+99.epd*
 *.pgn

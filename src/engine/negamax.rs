@@ -48,8 +48,9 @@ pub fn negamax<const T: usize>(
     mut alpha: i32, mut beta: i32,
     depth: u32, ply: u32
 ) -> i32 {
-    search_info.pv_table.init_pv(ply);
-    if depth == 0 { return evaluate(search_info, board); }
+    if depth == 0 { 
+        return evaluate(search_info, board); 
+    }
 
     if search_info.ended_early {
         return 0;
@@ -92,7 +93,21 @@ pub fn negamax<const T: usize>(
         };
     }
 
-    let moves = board.generate_moves(NORMAL_MODE);
+    let legal_moves = board.generate_legal_moves(NORMAL_MODE);
+
+    match board.game.resolution.resolve(board, &legal_moves) {
+        GameResults::Draw => {
+            return 0;
+        },
+        GameResults::Win(team) => {
+            if board.state.moving_team == team {
+                return MAX_SCORE - (ply as i32);
+            }
+
+            return MIN_SCORE + (ply as i32);
+        },
+        GameResults::Ongoing => {}
+    };
 
     let hash = (search_info.hashes[len - 1] as usize) % search_info.transposition_size;
 
@@ -107,7 +122,7 @@ pub fn negamax<const T: usize>(
         }
     }
         
-    let mut moves = moves.iter()
+    let mut moves = legal_moves.iter()
         .map(|action| ScoredMove { action: *action, score: score_action(&board, search_info, action, &tt_entry, ply) })
         .collect::<Vec<_>>();
 
@@ -123,14 +138,11 @@ pub fn negamax<const T: usize>(
         best_move = Some(moves[0].action);
     }
 
+    search_info.pv_table.init_pv(ply);
     let mut searched_moves = 0;
     for ScoredMove { action, .. } in moves {
         search_info.nodes += 1;
         searched_moves += 1;
-
-        if !board.game.controller.is_legal(board, &action) {
-            continue;
-        }
 
         let TacticalMadeMove(undo, _) = make_move(board, search_info, &action);
 
@@ -213,10 +225,6 @@ pub fn negamax_iid<const T: usize>(
         out = negamax(search_info, board, MIN_SCORE, MAX_SCORE, depth as u32, 0);
         let end = get_time_ms();
 
-        if search_info.ended_early {
-            return out;   
-        }
-
         let mut time = end - start;
         if time == 0 { time = 1; }
         let nodes = search_info.nodes;
@@ -224,7 +232,11 @@ pub fn negamax_iid<const T: usize>(
         let nps = npms * 1_000;
 
         let pv = search_info.pv_table.display_pv(board);
-        //println!("info depth {depth} cp {} time {} nodes {} nps {} string bf {:.2}", out, time, nodes, nps, (nodes as f64).powf(1.0 / (depth as f64)));
+
+        println!("info depth {depth} cp {} time {} nodes {} nps {} string bf {:.2} pv {pv}", out, time, nodes, nps, (nodes as f64).powf(1.0 / (depth as f64)));
+        if search_info.ended_early {
+            return out;   
+        }
     }
 
     return out;

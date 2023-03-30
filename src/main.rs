@@ -20,8 +20,6 @@ fn get_time_ms() -> u128 {
 }
 
 fn main() {
-    run_datagen();
-    return;
 
     let args: Vec<String> = env::args().collect();
 
@@ -36,8 +34,10 @@ fn main() {
         let two = args.contains(&"200".to_string());
         let nnue = load_nnue(if two {
             "/home/corman/Ampersand/200_model_weights.json"
+        } else if args.contains(&"500".to_string()) {
+            "/home/corman/Ampersand/model_weights_500.json"
         } else {
-            "/home/corman/Ampersand/1000_model_weights.json"
+            "/home/corman/Ampersand/model_weights_10000.json"
         });
 
         let engine = Engine {

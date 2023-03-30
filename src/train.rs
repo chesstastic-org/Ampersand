@@ -33,7 +33,7 @@ fn generate_random_game(rng: &mut ThreadRng, nnue: &NNUE) -> Vec<(Vec<i16>, i32)
     let mut hashes: Vec<u64> = vec![];
 
     let mut ind = 0;
-    let mut search_info = create_search_info(&board, nnue, SearchEnd::Nodes(10_000));
+    let mut search_info = create_search_info(&board, nnue, SearchEnd::Nodes(500));
     loop {
         let moves = board.generate_legal_moves(NORMAL_MODE);
         match game.resolution.resolve(&mut board, &moves) {
@@ -99,10 +99,10 @@ pub fn cycle_datagen(thread_num: i32, nnue_path: &str) {
     let nnue = load_nnue(nnue_path);
     let mut rng = thread_rng();
 
-    while position_count < 50_000 {
+    while position_count < 500_000 {
         let mut positions: Vec<(Vec<i16>, i32)> = vec![];
         let start = get_time_ms();
-        for _ in 0..20 {
+        for _ in 0..100 {
             let game = generate_random_game(&mut rng, &nnue); 
             positions.extend(game);
         }
