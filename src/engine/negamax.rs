@@ -74,21 +74,25 @@ pub fn negamax<const T: usize>(
         return 0;
     }
 
-    let moves = board.generate_legal_moves(NORMAL_MODE);
+    if depth > 1 {
+        let moves = board.generate_legal_moves(NORMAL_MODE);
 
-    match board.game.resolution.resolve(board, &moves) {
-        GameResults::Draw => {
-            return 0;
-        },
-        GameResults::Win(team) => {
-            if board.state.moving_team == team {
-                return MAX_SCORE - (ply as i32);
-            }
+        match board.game.resolution.resolve(board, &moves) {
+            GameResults::Draw => {
+                return 0;
+            },
+            GameResults::Win(team) => {
+                if board.state.moving_team == team {
+                    return MAX_SCORE - (ply as i32);
+                }
+    
+                return MIN_SCORE + (ply as i32);
+            },
+            GameResults::Ongoing => {}
+        };
+    }
 
-            return MIN_SCORE + (ply as i32);
-        },
-        GameResults::Ongoing => {}
-    };
+    let moves = board.generate_moves(NORMAL_MODE);
 
     let hash = (search_info.hashes[len - 1] as usize) % search_info.transposition_size;
 
@@ -123,6 +127,10 @@ pub fn negamax<const T: usize>(
     for ScoredMove { action, .. } in moves {
         search_info.nodes += 1;
         searched_moves += 1;
+
+        if !board.game.controller.is_legal(board, &action) {
+            continue;
+        }
 
         let TacticalMadeMove(undo, _) = make_move(board, search_info, &action);
 
@@ -216,7 +224,7 @@ pub fn negamax_iid<const T: usize>(
         let nps = npms * 1_000;
 
         let pv = search_info.pv_table.display_pv(board);
-        //println!("info depth {depth} cp {} time {} nodes {} nps {} bf {:.2}", out, time, nodes, nps, (nodes as f64).powf(1.0 / (depth as f64)));
+        //println!("info depth {depth} cp {} time {} nodes {} nps {} string bf {:.2}", out, time, nodes, nps, (nodes as f64).powf(1.0 / (depth as f64)));
     }
 
     return out;

@@ -5,11 +5,11 @@ use monster_chess::{
 use rand::{rngs::ThreadRng, thread_rng};
 use rand::prelude::SliceRandom;
 
-use std::{time::{SystemTime, UNIX_EPOCH}, fs::File};
+use std::{time::{SystemTime, UNIX_EPOCH, Duration}, fs::File, thread::{self, JoinHandle}};
 use std::fs;
 use std::io::Write;
 
-use crate::{engine::{pv::{MAX_DEPTH, PV}, search_info::{SearchInfo, create_search_info, SearchEnd}, negamax::{negamax_iid}, nnue::{NNUE, alloc_layers, apply_hidden}, ordering::MAX_KILLER_MOVES, features::{get_features, save_features, create_flips}}};
+use crate::{engine::{pv::{MAX_DEPTH, PV}, search_info::{SearchInfo, create_search_info, SearchEnd}, negamax::{negamax_iid}, nnue::{NNUE, alloc_layers, apply_hidden, load_nnue}, ordering::MAX_KILLER_MOVES, features::{get_features, save_features, create_flips}}};
 
 fn get_time_ms() -> u128 {
     let start = SystemTime::now();
@@ -32,9 +32,9 @@ fn generate_random_game(rng: &mut ThreadRng, nnue: &NNUE) -> Vec<(Vec<i16>, i32)
 
     let mut hashes: Vec<u64> = vec![];
 
+    let mut ind = 0;
+    let mut search_info = create_search_info(&board, nnue, SearchEnd::Nodes(10_000));
     loop {
-        hashes.push(game.zobrist.compute(&board));
-
         let moves = board.generate_legal_moves(NORMAL_MODE);
         match game.resolution.resolve(&mut board, &moves) {
             GameResults::Win(team) => {
@@ -48,24 +48,30 @@ fn generate_random_game(rng: &mut ThreadRng, nnue: &NNUE) -> Vec<(Vec<i16>, i32)
             break;
         }
 
-        let mut search_info = create_search_info(&board, nnue, SearchEnd::Nodes(10_000));
+        search_info.best_move = None;
+        search_info.nodes = 0;
+        search_info.ended_early = false;
 
-        search_info.hashes = hashes.clone();
-        
-        for square in 0..search_info.layers[0].len() {
-            search_info.layers[0][square] = 0;
-        }
-        save_features(&mut search_info.layers[0], &mut board, &search_info.flips);
-        apply_hidden(&mut search_info);
-        let eval = negamax_iid(&mut search_info, &mut board) as u64;
+        let action = if ind >= 8 {
+            search_info.hashes.push(game.zobrist.compute(&board));
+            
+            for square in 0..search_info.layers[0].len() {
+                search_info.layers[0][square] = 0;
+            }
+            save_features(&mut search_info.layers[0], &mut board, &search_info.flips);
+            apply_hidden(&mut search_info);
+            negamax_iid(&mut search_info, &mut board) as u64;
 
-        let action = search_info.best_move.expect("Could not find NNUE move");
-
-        //let action = moves.choose(rng).copied().expect("Could not get random move.");
+            search_info.best_move.expect("Could not find NNUE move")
+        } else {
+            *moves.choose(rng).expect("Could not get random move.")
+        };
 
         uci_positions.push((get_features(&board, flips), board.state.moving_team));
         board.make_move(&action);
         move_count += 1;
+
+        ind += 1;
     }
 
     uci_positions.choose_multiple(rng, 20)
@@ -77,14 +83,27 @@ fn generate_random_game(rng: &mut ThreadRng, nnue: &NNUE) -> Vec<(Vec<i16>, i32)
         .collect::<Vec<_>>()
 }
 
-pub fn cycle_datagen(nnue: &NNUE, file: &mut File, iter: &mut i32, position_count: &mut i32) { 
+pub fn cycle_datagen(thread_num: i32, nnue_path: &str) { 
+    let path = format!("positions/{thread_num}.txt");
+
+    let mut file = fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .append(true)
+        .open(path)
+        .unwrap();
+
+    let mut position_count = 0;
+    let mut iter = 0;
+
+    let nnue = load_nnue(nnue_path);
     let mut rng = thread_rng();
 
-    while *position_count < 1_000_000 {
-        let start = get_time_ms();
+    while position_count < 50_000 {
         let mut positions: Vec<(Vec<i16>, i32)> = vec![];
-        for _ in 0..100 {
-            let game = generate_random_game(&mut rng, nnue); 
+        let start = get_time_ms();
+        for _ in 0..20 {
+            let game = generate_random_game(&mut rng, &nnue); 
             positions.extend(game);
         }
 
@@ -105,29 +124,33 @@ pub fn cycle_datagen(nnue: &NNUE, file: &mut File, iter: &mut i32, position_coun
             wins -= 1;
         }*/
     
+        position_count += positions.len();
+
         let mut text = String::new();
         for (features, score) in positions {
             let features = features.iter().map(|el| el.to_string()).collect::<Vec<_>>().join("");
-            text.push_str(&format!("{features}: {:.1}", score));
-            *position_count += 1;
+            text.push_str(&format!("{features}: {:.1}\n", score));
         }
-        writeln!(file, "{}", text).unwrap();
+
         let end = get_time_ms();
-        println!("{iter}: {} ({} positions)", end - start, position_count);
-        *iter += 1;
+
+        println!("[#{thread_num}] {iter}: {position_count} positions in {}ms", end - start);
+
+        writeln!(file, "{}", text).unwrap();
+
+        
+        iter += 1;
     }
 }
 
-pub fn generate_random_data(nnue: &NNUE) { 
-    let mut file = fs::OpenOptions::new()
-        .write(true)
-        .append(true)
-        .open("positions.txt")
-        .unwrap();
-    
-
-    let mut position_count = 0;
-    let mut iter = 0;
-    
-    cycle_datagen(nnue, &mut file, &mut iter, &mut position_count);
+pub fn run_datagen() { 
+    let mut threads = Vec::<JoinHandle<()>>::new();
+    for thread_num in 0..7 {
+        threads.push(thread::spawn(move || {
+            cycle_datagen(thread_num, "200_model_weights.json")
+        }));
+    }
+    for thread in threads {
+        thread.join().unwrap();
+    }
 }

@@ -4,8 +4,8 @@ use engine::nnue::load_nnue;
 use monster_chess::games::chess::Chess;
 use monster_ugi::{ugi::run_ugi, engine::Engine, random::RandomEngine};
 use rand::thread_rng;
-
-use crate::{train::generate_random_data, ugi::SimpleEngine};
+use train::run_datagen;
+use ugi::SimpleEngine;
 
 mod train;
 mod ugi;
@@ -20,7 +20,7 @@ fn get_time_ms() -> u128 {
 }
 
 fn main() {
-    generate_random_data(&load_nnue("/home/corman/Ampersand/200_model_weights.json"));
+    run_datagen();
     return;
 
     let args: Vec<String> = env::args().collect();

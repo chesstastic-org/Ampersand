@@ -44,7 +44,7 @@ pub fn create_search_info<'a, const T: usize>(board: &Board<T>, nnue: &'a NNUE, 
             length: [0; MAX_DEPTH],
         },
         killer_moves: [ [ None; MAX_KILLER_MOVES ]; MAX_DEPTH ],
-        hashes: Vec::with_capacity(64),
+        hashes: Vec::with_capacity(10_000),
         ended_early: false,
         search_end
     }

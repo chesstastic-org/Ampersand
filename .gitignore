@@ -4,5 +4,7 @@ sprt.bash
 8mvs_+90_+99.epd*
 *.pgn
 positions.txt
+positions/*.txt
 *perf.data*
+flamegraph.svg
 flamegraph.svg

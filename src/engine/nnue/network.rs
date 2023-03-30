@@ -115,6 +115,13 @@ pub fn update_layer(input: &mut [i16], added_features: &[u16], removed_features:
     }
 }
 
+pub fn activate_layer(input: &mut [i16], added_features: &[u16], removed_features: &[u16], layer: &Layer, activation: impl Fn(i16) -> i16) {
+    for (ind, neuron) in layer.0.iter().enumerate() {
+        update_neuron(&mut input[ind], added_features, removed_features, neuron);
+        input[ind] = activation(input[ind]);
+    }
+}
+
 pub fn apply_hidden<'a, const T: usize>(info: &mut SearchInfo<T>) {
     let (input, rest) = info.layers.split_at_mut(1);
     let (hidden, _) = rest.split_at_mut(1);

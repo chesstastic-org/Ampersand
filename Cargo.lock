@@ -122,9 +122,9 @@ dependencies = [
 
 [[package]]
 name = "monster_chess"
-version = "0.0.17"
+version = "0.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "49ad0a94456ae374e1419725693d10d18e2e3326465c6f77e822ec80d3359db3"
+checksum = "4c9884b6b5920248e5cf868392a0cc39bb33dc27a149b0c08ae5e0b318a9a850"
 dependencies = [
  "fastrand",
  "heapless",
@@ -133,9 +133,9 @@ dependencies = [
 
 [[package]]
 name = "monster_ugi"
-version = "0.0.7"
+version = "0.0.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6d614e92e146fbb3b8e56f47753acd0849d2ad6c15fb4425c384d090968bcd94"
+checksum = "a45380e7cd6a21441b72515b65b41313d038a029c955f256bf93b1f52d8b6e77"
 dependencies = [
  "monster_chess",
  "rand",
